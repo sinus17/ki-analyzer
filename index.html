@@ -70,6 +70,15 @@
   .legend span { display:inline-flex; align-items:center; gap:5px; }
   .dot { width: 11px; height: 11px; border-radius: 3px; display:inline-block; }
   .status { font-size: 13px; color: var(--muted); margin-top: 10px; }
+  .model-row { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; font-size: 13px; }
+  .model-row .mname { font-weight: 700; font-size: 14px; }
+  .model-row .mscore { float: right; font-size: 12px; color: var(--muted); }
+  .model-row ul { margin: 8px 0 0 18px; color: var(--muted); line-height: 1.5; }
+  .prev-item { border-left: 3px solid var(--accent); padding: 8px 14px; margin-bottom: 12px; font-size: 13px; line-height: 1.55; }
+  .prev-item .pname { font-weight: 700; }
+  .prev-item .pwhy { color: var(--ink); margin-top: 4px; }
+  .prev-item .pavoid { color: var(--muted); margin-top: 4px; }
+  .prev-item .pavoid b { color: #16a34a; }
   footer { text-align:center; font-size: 12px; color: var(--muted); padding: 20px; }
 </style>
 </head>
@@ -108,6 +117,15 @@
       </div>
       <div class="metrics" id="metrics"></div>
     </div>
+    <div class="card" id="modelCard" style="display:none">
+      <h2>Mögliche Modell-Indikatoren</h2>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.5">
+        ⚠️ <b>Sehr spekulativ:</b> Kein Verfahren kann das Ursprungsmodell zuverlässig bestimmen.
+        Diese Anzeige listet lediglich Formulierungen und Artefakte, die statistisch bei bestimmten
+        Modellen gehäuft auftreten — sie ist als Gesprächsgrundlage gedacht, nicht als Zuordnung.
+      </div>
+      <div id="modelList"></div>
+    </div>
     <div class="layout">
       <div class="card doc">
         <h2>Dokument mit markierten Stellen</h2>
@@ -125,6 +143,15 @@
           <div id="findingsList"></div>
         </div>
       </div>
+    </div>
+    <div class="card" id="preventionCard">
+      <h2>📚 Signal-Erklärungen &amp; Prävention (educational)</h2>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.5">
+        Warum schlägt welches Signal an — und wie schreibt man Texte, die weder KI-generiert wirken
+        noch bei ehrlicher Eigenleistung fälschlich auffallen? Diese Hinweise dienen der Lehre und
+        Prävention (z.&nbsp;B. für Schreibberatung und Studierendengespräche).
+      </div>
+      <div id="preventionList"></div>
     </div>
   </div>
 </main>
@@ -166,6 +193,69 @@ const CONNECTIVES = [
 const PAIR_PATTERNS = [
   { re: /sowohl\b[^.!?]{2,80}?\bals auch/gi, label: "sowohl … als auch" },
   { re: /nicht nur\b[^.!?]{2,80}?\bsondern auch/gi, label: "nicht nur … sondern auch" }
+];
+
+/* ---------- Modell-Indikatoren (heuristisch, spekulativ!) ---------- */
+// Kein Verfahren kann das Ursprungsmodell zuverlässig bestimmen. Diese Marker
+// bilden lediglich typische Stil-Fingerabdrücke der bekannten Modelle ab.
+const MODEL_SIGNATURES = [
+  { name: "ChatGPT / GPT-4 (OpenAI)", markers: [
+      { re: /zusammenfassend lässt sich (sagen|festhalten)/gi, w: 3, label: "„zusammenfassend lässt sich sagen“ (typischer GPT-Schlusssatz)" },
+      { re: /es ist wichtig(,)? zu (beachten|betonen|verstehen)/gi, w: 3, label: "„es ist wichtig zu beachten“ (häufigste GPT-Einleitung)" },
+      { re: /in der heutigen( digitalen| schnelllebigen| modernen)? (welt|zeit|gesellschaft)/gi, w: 3, label: "„in der heutigen (digitalen) Welt“ (klassischer GPT-Aufhänger)" },
+      { re: /spielt eine (entscheidende|zentrale|wichtige) rolle/gi, w: 2, label: "„spielt eine entscheidende Rolle“" },
+      { re: /tauchen wir (ein|tiefer)/gi, w: 3, label: "„tauchen wir ein“ (GPT-Blogstil)" },
+      { re: /insgesamt (lässt sich|zeigt sich|kann)/gi, w: 2, label: "„insgesamt lässt sich…“ (GPT-Fazitformel)" },
+      { re: /fazit:/gi, w: 1, label: "explizite „Fazit:“-Überschrift" }
+    ]},
+  { name: "Claude (Anthropic)", markers: [
+      { re: / — /g, w: 1, label: "Gedankenstrich-Einschübe „ — “ (Claude nutzt Em-Dashes auffällig oft)" },
+      { re: /es ist erwähnenswert/gi, w: 3, label: "„es ist erwähnenswert“" },
+      { re: /im kern (geht es|handelt es|bedeutet)/gi, w: 3, label: "„im Kern geht es um…“" },
+      { re: /allerdings (ist|gilt|sollte) (zu beachten|beachtet werden|angemerkt werden)/gi, w: 2, label: "abwägende Einschränkung („allerdings ist zu beachten“)" },
+      { re: /eine differenzierte betrachtung/gi, w: 2, label: "„eine differenzierte Betrachtung“ (Claude-typisches Abwägen)" },
+      { re: /wobei (jedoch|allerdings|zu beachten)/gi, w: 1, label: "verschachtelte „wobei“-Relativierung" }
+    ]},
+  { name: "Gemini (Google)", markers: [
+      { re: /hier sind (einige|die wichtigsten|fünf|zehn)/gi, w: 3, label: "„Hier sind einige…“ (Gemini-Listeneinleitung)" },
+      { re: /im folgenden werden/gi, w: 1, label: "„im Folgenden werden…“" },
+      { re: /^\s*\*\s+/gm, w: 1, label: "Sternchen-Aufzählungen (Markdown-Reste aus Gemini)" },
+      { re: /wichtige (punkte|aspekte|erkenntnisse):/gi, w: 2, label: "„Wichtige Punkte:“-Struktur" },
+      { re: /lassen sie uns/gi, w: 2, label: "„Lassen Sie uns…“ (Gemini-Gesprächston)" }
+    ]},
+  { name: "Copy-Paste aus Chatbot (modellübergreifend)", markers: [
+      { re: /\*\*[^*\n]{2,60}\*\*/g, w: 3, label: "Markdown-Fettdruck „**…**“ im Fließtext (nicht konvertierte Chatbot-Ausgabe)" },
+      { re: /^#{1,4}\s+/gm, w: 3, label: "Markdown-Überschriften „## …“ (direkt aus dem Chat kopiert)" },
+      { re: /^\s*\d+\.\s+\*\*/gm, w: 3, label: "nummerierte Liste mit Fettdruck „1. **…“ (typisches Chatbot-Layout)" },
+      { re: /als (ki|sprachmodell|ki-modell)/gi, w: 5, label: "Selbstreferenz „als KI-Modell“ (vergessener Chatbot-Satz!)" },
+      { re: /ich hoffe, (das|dies) hilft/gi, w: 5, label: "„Ich hoffe, das hilft“ (vergessene Chatbot-Schlussfloskel!)" },
+      { re: /gerne erkläre ich/gi, w: 4, label: "„Gerne erkläre ich…“ (Chatbot-Antwortbeginn)" }
+    ]}
+];
+
+/* ---------- Signal-Erklärungen & Prävention (educational) ---------- */
+const SIGNAL_INFO = [
+  { name: "Typische LLM-Phrasen",
+    why: "Sprachmodelle greifen statistisch überproportional oft zu denselben Füll- und Rahmenformulierungen („zusammenfassend lässt sich sagen“, „spielt eine entscheidende Rolle“). In menschlichen Texten kommen sie vor, aber deutlich seltener und weniger gehäuft.",
+    avoid: "Eigenständig formulieren statt Fertigbausteine nutzen: konkrete Aussagen mit Quellenbezug statt generischer Bedeutungs-Floskeln. Wer mit KI-Unterstützung arbeitet und das offenlegt, sollte jede Formulierung in eigene Worte überführen und inhaltlich prüfen — das ist zugleich der beste Schutz vor Falsch-Verdacht bei ehrlicher Eigenleistung." },
+  { name: "Floskel-Dichte (Konnektoren)",
+    why: "LLMs verketten Absätze fast zwanghaft mit Übergangswörtern („darüber hinaus“, „des Weiteren“, „zudem“). Menschliche Autoren setzen Konnektoren sparsamer und variabler.",
+    avoid: "Beim Überarbeiten jeden zweiten Konnektor streichen — guter Text braucht sie kaum, weil die inhaltliche Logik den Übergang trägt. Faustregel: höchstens ein Übergangswort pro 2–3 Sätze." },
+  { name: "Paar-Konstruktionen",
+    why: "„Sowohl … als auch“ und „nicht nur … sondern auch“ sind bei LLMs stark überrepräsentiert, weil sie ausgewogen klingen, ohne Position zu beziehen.",
+    avoid: "Position beziehen und priorisieren: statt „sowohl A als auch B sind wichtig“ lieber begründen, was unter welchen Bedingungen wichtiger ist." },
+  { name: "Satzlängen-Uniformität (Burstiness)",
+    why: "LLM-Sätze sind auffällig gleich lang (geringe Varianz). Menschen schreiben „bursty“: mal ein langer verschachtelter Satz, dann ein kurzer. Punkt.",
+    avoid: "Beim Redigieren bewusst Rhythmus einbauen: lange Sätze aufbrechen, wichtige Aussagen als kurze Sätze stehen lassen. Laut lesen hilft, monotonen Rhythmus zu hören." },
+  { name: "Wiederholte Satzanfänge",
+    why: "LLMs beginnen aufeinanderfolgende Sätze oft mit denselben Wörtern („Die Digitalisierung… Die Digitalisierung…“), weil sie lokal Muster fortschreiben.",
+    avoid: "Satzanfänge variieren: mit Nebensatz, Adverbial oder Objekt beginnen statt immer mit dem Subjekt." },
+  { name: "Lexikalische Diversität",
+    why: "Innerhalb eines Absatzes wiederholen LLMs Schlüsselwörter häufiger, statt Synonyme oder Pronomen zu verwenden (niedrige Type-Token-Ratio).",
+    avoid: "Wortwiederholungen beim Korrekturlesen markieren und durch Synonyme, Pronomen oder Umformulierung ersetzen — außer bei Fachtermini, die konsistent bleiben müssen." },
+  { name: "Modell-Indikatoren / Markdown-Artefakte",
+    why: "Direkt aus einem Chatbot kopierter Text enthält oft verräterische Reste: Markdown-Zeichen (**fett**, ## Überschrift), Chatbot-Floskeln („Ich hoffe, das hilft“) oder modelltypische Standardformulierungen.",
+    avoid: "Die einzig sinnvolle Prävention ist Transparenz: KI-Nutzung gemäß den Regeln der Hochschule deklarieren, KI nur als Werkzeug (Recherche, Feedback, Korrektur) einsetzen und jeden übernommenen Gedanken selbst durchdringen und neu formulieren. Kaschieren ist keine Lösung — Täuschung bleibt Täuschung, auch wenn kein Detektor anschlägt." }
 ];
 
 /* ---------- Text-Extraktion ---------- */
@@ -230,17 +320,19 @@ function analyzeParagraph(p) {
 
   // 1) LLM-Phrasen
   let phraseHits = 0;
+  const phraseList = [];
   for (const ph of PHRASES_HIGH) {
     let idx = lower.indexOf(ph);
     while (idx !== -1) {
       phraseHits++;
+      phraseList.push(p.slice(idx, idx + ph.length));
       marks.push([idx, idx + ph.length]);
       idx = lower.indexOf(ph, idx + ph.length);
     }
   }
   if (phraseHits) {
     score += Math.min(phraseHits * 22, 55);
-    reasons.push(phraseHits + "× typische LLM-Formulierung");
+    reasons.push(phraseHits + "× typische LLM-Formulierung: " + phraseList.map(x => "„" + x + "“").join(", "));
   }
 
   // 2) Konnektoren-Dichte
@@ -254,7 +346,7 @@ function analyzeParagraph(p) {
   const connDensity = sentences.length ? connHits / sentences.length : 0;
   if (sentences.length >= 3 && connDensity >= 0.6) {
     score += Math.min(Math.round(connDensity * 25), 30);
-    reasons.push("Sehr hohe Dichte an Übergangsfloskeln (" + connHits + " in " + sentences.length + " Sätzen: " + [...connFound].slice(0,4).join(", ") + "…)");
+    reasons.push("Sehr hohe Dichte an Übergangsfloskeln (" + connHits + " in " + sentences.length + " Sätzen: " + [...connFound].map(x => "„" + x + "“").join(", ") + ")");
   }
 
   // 3) Paar-Konstruktionen
@@ -305,6 +397,22 @@ function analyzeParagraph(p) {
   let sev = 0;
   if (score >= 55) sev = 3; else if (score >= 32) sev = 2; else if (score >= 16) sev = 1;
   return { score, sev, reasons, marks, sentences: sentences.length, words: words.length };
+}
+
+/* ---------- Modell-Erkennung (heuristisch) ---------- */
+function detectModels(text) {
+  return MODEL_SIGNATURES.map(sig => {
+    let score = 0;
+    const hits = [];
+    for (const m of sig.markers) {
+      const found = text.match(m.re);
+      if (found && found.length) {
+        score += m.w * Math.min(found.length, 4);
+        hits.push({ label: m.label, count: found.length, examples: found.slice(0, 3) });
+      }
+    }
+    return { name: sig.name, score, hits };
+  }).filter(r => r.score > 0).sort((a, b) => b.score - a.score);
 }
 
 function renderMarked(p, marks) {
@@ -389,6 +497,29 @@ $("analyzeBtn").onclick = () => {
     '<span class="quote">„'+esc(f.text.slice(0,90))+'…“</span>' +
     '<div class="why">'+f.reasons.map(esc).join("<br>")+'</div></div>'
   ).join("") : '<div style="color:var(--muted);font-size:13px">Keine auffälligen Absätze gefunden.</div>';
+
+  // Modell-Indikatoren
+  const models = detectModels(raw);
+  if (models.length) {
+    $("modelCard").style.display = "block";
+    $("modelList").innerHTML = models.map(m =>
+      '<div class="model-row"><span class="mscore">Indikator-Stärke: ' + m.score + '</span>' +
+      '<span class="mname">' + esc(m.name) + '</span>' +
+      '<ul>' + m.hits.map(h =>
+        '<li>' + h.count + '× ' + esc(h.label) +
+        (h.examples.length ? ' — z.&nbsp;B. „' + esc(h.examples[0].trim().slice(0, 70)) + '“' : '') + '</li>'
+      ).join('') + '</ul></div>'
+    ).join("");
+  } else {
+    $("modelCard").style.display = "none";
+  }
+
+  // Signal-Erklärungen & Prävention
+  $("preventionList").innerHTML = SIGNAL_INFO.map(s =>
+    '<div class="prev-item"><span class="pname">' + esc(s.name) + '</span>' +
+    '<div class="pwhy"><b>Warum erkannt:</b> ' + esc(s.why) + '</div>' +
+    '<div class="pavoid"><b>Prävention:</b> ' + esc(s.avoid) + '</div></div>'
+  ).join("");
 
   $("results").style.display = "block";
   $("results").scrollIntoView({ behavior: "smooth" });

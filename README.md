@@ -12,9 +12,11 @@ Kein Verfahren kann KI-generierten Text zuverlässig nachweisen — auch dieses 
 
 - **Datei-Import:** PDF, DOCX und TXT per Drag & Drop oder Dateiauswahl, alternativ Text einfügen
 - **Absatzweise Markierung:** verdächtige Passagen farblich hervorgehoben (gelb / orange / rot) mit Begründung
-- **Phrasen-Highlighting:** typische LLM-Formulierungen werden direkt im Text unterstrichen
+- **Phrasen-Highlighting:** typische LLM-Formulierungen werden direkt im Text unterstrichen — die Befunde nennen die exakt gefundenen Formulierungen
+- **Modell-Indikatoren (spekulativ):** heuristische Stil-Fingerabdrücke für ChatGPT/GPT-4, Claude, Gemini sowie Copy-Paste-Artefakte (Markdown-Reste, vergessene Chatbot-Floskeln) — ausdrücklich keine zuverlässige Modell-Zuordnung
 - **Auffälligkeits-Index:** Gesamtscore 0–100 mit Metrik-Übersicht
 - **Befunde-Liste:** sortiert nach Score, klickbar zum Springen an die Textstelle
+- **Signal-Erklärungen & Prävention (educational):** erklärt für jedes Signal, warum es anschlägt und wie eigenständiges Schreiben (bzw. transparente, regelkonforme KI-Nutzung) aussieht — gedacht für Schreibberatung und Studierendengespräche
 - **100 % lokal:** die Analyse läuft vollständig im Browser, es werden keine Daten übertragen
 
 ## Analysierte Signale
@@ -27,6 +29,11 @@ Kein Verfahren kann KI-generierten Text zuverlässig nachweisen — auch dieses 
 | Satzlängen-Uniformität | LLM-Texte haben oft auffällig gleichförmige Satzlängen (geringe Burstiness) |
 | Satzanfänge | Mehrfach identisch beginnende Sätze |
 | Lexikalische Diversität | Geringe Wortvielfalt innerhalb eines Absatzes |
+| Modell-Indikatoren | Modelltypische Formulierungen (GPT/Claude/Gemini) und Copy-Paste-Artefakte wie Markdown-Reste („\*\*fett\*\*", „## Überschrift") oder vergessene Chatbot-Sätze („Ich hoffe, das hilft") |
+
+## Hinweis zur Modell-Erkennung
+
+Eine zuverlässige Bestimmung des Ursprungsmodells ist wissenschaftlich **nicht möglich**. Die Modell-Indikatoren zeigen lediglich, welche modelltypischen Stilmuster im Text gehäuft vorkommen — als Gesprächsgrundlage, nicht als Beweis oder Zuordnung.
 
 ## Nutzung
 

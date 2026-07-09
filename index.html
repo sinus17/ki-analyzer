@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KI-Text-Analyzer für wissenschaftliche Arbeiten</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1a202c; --muted: #64748b;
+    --accent: #4f46e5; --border: #e2e8f0;
+    --sev1: #fef9c3; --sev1-b: #ca8a04;
+    --sev2: #ffedd5; --sev2-b: #ea580c;
+    --sev3: #fee2e2; --sev3-b: #dc2626;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
+  header { background: var(--card); border-bottom: 1px solid var(--border); padding: 18px 28px; display:flex; align-items:center; gap:14px; }
+  header h1 { font-size: 19px; font-weight: 700; }
+  header .sub { font-size: 13px; color: var(--muted); }
+  .disclaimer { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; font-size: 13px;
+    padding: 12px 28px; line-height: 1.5; }
+  .disclaimer strong { color: #1e3a8a; }
+  main { max-width: 1200px; margin: 24px auto; padding: 0 24px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin-bottom: 20px; }
+  .dropzone { border: 2px dashed #cbd5e1; border-radius: 12px; padding: 44px 20px; text-align: center;
+    cursor: pointer; transition: all .15s; color: var(--muted); }
+  .dropzone:hover, .dropzone.drag { border-color: var(--accent); background: #eef2ff; color: var(--accent); }
+  .dropzone .big { font-size: 16px; font-weight: 600; margin-bottom: 6px; color: var(--ink); }
+  textarea { width: 100%; min-height: 140px; margin-top: 14px; border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px; font-size: 14px; font-family: inherit; resize: vertical; }
+  .btn { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 11px 22px;
+    font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 12px; }
+  .btn:hover { background: #4338ca; }
+  .btn:disabled { background: #a5b4fc; cursor: default; }
+  #results { display: none; }
+  .score-row { display: flex; gap: 20px; flex-wrap: wrap; }
+  .gauge-card { flex: 0 0 260px; text-align: center; }
+  .gauge-num { font-size: 52px; font-weight: 800; line-height: 1; }
+  .gauge-label { font-size: 15px; font-weight: 700; margin-top: 6px; }
+  .gauge-sub { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.4; }
+  .metrics { flex: 1; min-width: 300px; }
+  .metric { display: flex; justify-content: space-between; align-items:center; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+  .metric:last-child { border-bottom: none; }
+  .metric .name { color: var(--ink); }
+  .metric .hint { font-size: 12px; color: var(--muted); display: block; }
+  .bar { width: 130px; height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: 4px; }
+  .layout { display: flex; gap: 20px; align-items: flex-start; }
+  .doc { flex: 1; min-width: 0; }
+  .doc .para { padding: 4px 6px; border-radius: 6px; margin-bottom: 14px; line-height: 1.7; font-size: 15px; }
+  .doc .para.s1 { background: var(--sev1); box-shadow: inset 3px 0 0 var(--sev1-b); }
+  .doc .para.s2 { background: var(--sev2); box-shadow: inset 3px 0 0 var(--sev2-b); }
+  .doc .para.s3 { background: var(--sev3); box-shadow: inset 3px 0 0 var(--sev3-b); }
+  mark { background: rgba(220,38,38,.18); border-bottom: 2px solid #dc2626; border-radius: 2px; padding: 0 1px; }
+  .findings { flex: 0 0 340px; position: sticky; top: 16px; max-height: 85vh; overflow-y: auto; }
+  .finding { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px;
+    font-size: 13px; cursor: pointer; background: var(--card); }
+  .finding:hover { border-color: var(--accent); }
+  .finding .tag { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 4px; padding: 2px 6px; margin-bottom: 5px; }
+  .t1 { background: var(--sev1); color: var(--sev1-b); }
+  .t2 { background: var(--sev2); color: var(--sev2-b); }
+  .t3 { background: var(--sev3); color: var(--sev3-b); }
+  .finding .why { color: var(--muted); line-height: 1.45; }
+  .finding .quote { font-style: italic; color: var(--ink); margin-top: 4px; display:block;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  h2 { font-size: 16px; margin-bottom: 14px; }
+  .legend { font-size: 12px; color: var(--muted); margin-bottom: 12px; display:flex; gap:14px; flex-wrap:wrap; }
+  .legend span { display:inline-flex; align-items:center; gap:5px; }
+  .dot { width: 11px; height: 11px; border-radius: 3px; display:inline-block; }
+  .status { font-size: 13px; color: var(--muted); margin-top: 10px; }
+  footer { text-align:center; font-size: 12px; color: var(--muted); padding: 20px; }
+</style>
+</head>
+<body>
+<header>
+  <div style="font-size:26px">🔍</div>
+  <div>
+    <h1>KI-Text-Analyzer für wissenschaftliche Arbeiten</h1>
+    <div class="sub">Stylometrische Analyse deutschsprachiger Texte auf typische LLM-Muster</div>
+  </div>
+</header>
+<div class="disclaimer">
+  <strong>⚠️ Wichtiger Hinweis:</strong> Kein Verfahren kann KI-generierten Text zuverlässig nachweisen — auch dieses nicht.
+  Die Ergebnisse sind <strong>Indizien, keine Beweise</strong>. Falsch-Positive sind häufig, besonders bei formellem
+  wissenschaftlichem Stil und Nicht-Muttersprachlern. Nutzen Sie den Bericht ausschließlich als Ausgangspunkt für ein
+  Gespräch mit dem/der Studierenden, nie als alleinige Grundlage für Konsequenzen.
+</div>
+<main>
+  <div class="card" id="inputCard">
+    <div class="dropzone" id="dropzone">
+      <div class="big">Arbeit hierher ziehen oder klicken</div>
+      <div>PDF, DOCX oder TXT</div>
+      <input type="file" id="fileInput" accept=".pdf,.docx,.txt" hidden>
+    </div>
+    <textarea id="pasteArea" placeholder="…oder Text hier einfügen"></textarea>
+    <button class="btn" id="analyzeBtn">Text analysieren</button>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div id="results">
+    <div class="card score-row">
+      <div class="gauge-card">
+        <div class="gauge-num" id="gaugeNum">–</div>
+        <div class="gauge-label" id="gaugeLabel"></div>
+        <div class="gauge-sub">Auffälligkeits-Index (0–100).<br>Misst stilistische Ähnlichkeit zu typischem LLM-Output — <b>kein</b> Nachweis von KI-Nutzung.</div>
+      </div>
+      <div class="metrics" id="metrics"></div>
+    </div>
+    <div class="layout">
+      <div class="card doc">
+        <h2>Dokument mit markierten Stellen</h2>
+        <div class="legend">
+          <span><i class="dot" style="background:var(--sev1)"></i> leicht auffällig</span>
+          <span><i class="dot" style="background:var(--sev2)"></i> auffällig</span>
+          <span><i class="dot" style="background:var(--sev3)"></i> stark auffällig</span>
+          <span><mark>Phrase</mark> = typische LLM-Formulierung</span>
+        </div>
+        <div id="docBody"></div>
+      </div>
+      <div class="findings">
+        <div class="card" style="padding:16px">
+          <h2 id="findingsTitle">Befunde</h2>
+          <div id="findingsList"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+<footer>Analyse läuft vollständig lokal im Browser — es werden keine Daten hochgeladen.</footer>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+/* ---------- Musterlisten (Deutsch) ---------- */
+// Stark LLM-typische Phrasen (Gewicht 3)
+const PHRASES_HIGH = [
+  "zusammenfassend lässt sich sagen","zusammenfassend lässt sich festhalten","zusammenfassend kann festgehalten werden",
+  "es ist wichtig zu beachten","es ist wichtig zu betonen","es ist wichtig zu verstehen","es ist entscheidend",
+  "spielt eine entscheidende rolle","spielt eine zentrale rolle","spielt eine wichtige rolle","spielen eine entscheidende rolle",
+  "in der heutigen digitalen welt","in der heutigen zeit","im heutigen digitalen zeitalter","in einer zunehmend digitalisierten welt",
+  "in der heutigen schnelllebigen","in der modernen welt",
+  "von entscheidender bedeutung","von zentraler bedeutung","von großer bedeutung",
+  "es sei darauf hingewiesen","es gilt zu beachten","es ist anzumerken, dass",
+  "abschließend lässt sich sagen","abschließend lässt sich festhalten",
+  "dies unterstreicht die bedeutung","dies verdeutlicht die bedeutung","unterstreicht die notwendigkeit",
+  "ein tieferes verständnis","ein umfassendes verständnis","ein ganzheitliches verständnis",
+  "eine schlüsselrolle","einen wertvollen beitrag","einen entscheidenden beitrag","maßgeblich dazu bei",
+  "nicht zu unterschätzen","eine vielzahl von möglichkeiten","ein breites spektrum an",
+  "vor diesem hintergrund wird deutlich","in diesem zusammenhang ist zu erwähnen",
+  "die dynamische entwicklung","im ständigen wandel","stetig an bedeutung",
+  "sowohl chancen als auch herausforderungen","chancen und herausforderungen",
+  "es lässt sich festhalten","insgesamt lässt sich sagen","insgesamt zeigt sich",
+  "einen ganzheitlichen ansatz","eine differenzierte betrachtung","kritisch zu hinterfragen",
+  "im spannungsfeld zwischen","an der schnittstelle zwischen","eine facettenreiche"
+];
+// Konnektoren/Floskeln — einzeln normal, in hoher Dichte auffällig (Gewicht 1)
+const CONNECTIVES = [
+  "darüber hinaus","des weiteren","zudem","ferner","außerdem","überdies",
+  "nichtsdestotrotz","gleichwohl","dennoch","folglich","somit","demnach","infolgedessen",
+  "insbesondere","zusammenfassend","abschließend","grundsätzlich","dementsprechend",
+  "vor diesem hintergrund","in diesem kontext","in diesem zusammenhang","im hinblick auf",
+  "nicht zuletzt","hierbei","diesbezüglich"
+];
+const PAIR_PATTERNS = [
+  { re: /sowohl\b[^.!?]{2,80}?\bals auch/gi, label: "sowohl … als auch" },
+  { re: /nicht nur\b[^.!?]{2,80}?\bsondern auch/gi, label: "nicht nur … sondern auch" }
+];
+
+/* ---------- Text-Extraktion ---------- */
+const $ = id => document.getElementById(id);
+const dz = $("dropzone"), fi = $("fileInput"), status = $("status");
+dz.onclick = () => fi.click();
+dz.ondragover = e => { e.preventDefault(); dz.classList.add("drag"); };
+dz.ondragleave = () => dz.classList.remove("drag");
+dz.ondrop = e => { e.preventDefault(); dz.classList.remove("drag"); if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); };
+fi.onchange = () => { if (fi.files[0]) handleFile(fi.files[0]); };
+
+async function handleFile(file) {
+  status.textContent = "Lese " + file.name + " …";
+  try {
+    let text = "";
+    if (/\.pdf$/i.test(file.name)) {
+      const buf = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+      for (let p = 1; p <= pdf.numPages; p++) {
+        const page = await pdf.getPage(p);
+        const tc = await page.getTextContent();
+        let last = null, pageText = "";
+        for (const it of tc.items) {
+          if (last !== null && Math.abs(it.transform[5] - last) > 14) pageText += "\n";
+          else if (pageText && !pageText.endsWith(" ") && !pageText.endsWith("\n")) pageText += " ";
+          pageText += it.str;
+          last = it.transform[5];
+        }
+        text += pageText + "\n\n";
+      }
+    } else if (/\.docx$/i.test(file.name)) {
+      const buf = await file.arrayBuffer();
+      const res = await mammoth.extractRawText({ arrayBuffer: buf });
+      text = res.value;
+    } else {
+      text = await file.text();
+    }
+    $("pasteArea").value = text;
+    status.textContent = file.name + " geladen (" + text.split(/\s+/).length + " Wörter). Jetzt „Text analysieren“ klicken.";
+  } catch (err) {
+    status.textContent = "Fehler beim Lesen: " + err.message;
+  }
+}
+
+/* ---------- Analyse ---------- */
+function splitSentences(t) {
+  return t.replace(/\b(z\. ?B\.|bzw\.|ca\.|vgl\.|etc\.|u\. ?a\.|d\. ?h\.|Abb\.|Tab\.|S\.|Nr\.|inkl\.|ggf\.|Dr\.|Prof\.)/g,
+      m => m.replace(/\./g, "§")) // Abkürzungen schützen
+    .split(/(?<=[.!?])\s+(?=[A-ZÄÖÜ„"])/)
+    .map(s => s.replace(/§/g, ".").trim())
+    .filter(s => s.length > 0);
+}
+const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+function escRe(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+
+function analyzeParagraph(p) {
+  const sentences = splitSentences(p);
+  const words = p.split(/\s+/).filter(Boolean);
+  const reasons = [], marks = [];
+  let score = 0;
+  const lower = p.toLowerCase();
+
+  // 1) LLM-Phrasen
+  let phraseHits = 0;
+  for (const ph of PHRASES_HIGH) {
+    let idx = lower.indexOf(ph);
+    while (idx !== -1) {
+      phraseHits++;
+      marks.push([idx, idx + ph.length]);
+      idx = lower.indexOf(ph, idx + ph.length);
+    }
+  }
+  if (phraseHits) {
+    score += Math.min(phraseHits * 22, 55);
+    reasons.push(phraseHits + "× typische LLM-Formulierung");
+  }
+
+  // 2) Konnektoren-Dichte
+  let connHits = 0;
+  const connFound = new Set();
+  for (const c of CONNECTIVES) {
+    const re = new RegExp("(?<![a-zäöüß])" + escRe(c) + "(?![a-zäöüß])", "gi");
+    const m = lower.match(re);
+    if (m) { connHits += m.length; connFound.add(c); }
+  }
+  const connDensity = sentences.length ? connHits / sentences.length : 0;
+  if (sentences.length >= 3 && connDensity >= 0.6) {
+    score += Math.min(Math.round(connDensity * 25), 30);
+    reasons.push("Sehr hohe Dichte an Übergangsfloskeln (" + connHits + " in " + sentences.length + " Sätzen: " + [...connFound].slice(0,4).join(", ") + "…)");
+  }
+
+  // 3) Paar-Konstruktionen
+  for (const pp of PAIR_PATTERNS) {
+    const m = p.match(pp.re);
+    if (m && m.length >= 1) {
+      score += m.length * 8;
+      reasons.push(m.length + "× „" + pp.label + "“-Konstruktion");
+      for (const hit of m) {
+        const idx = p.indexOf(hit);
+        if (idx !== -1) marks.push([idx, idx + hit.length]);
+      }
+    }
+  }
+
+  // 4) Satzlängen-Uniformität (niedrige Burstiness)
+  if (sentences.length >= 4) {
+    const lens = sentences.map(s => s.split(/\s+/).length);
+    const mean = lens.reduce((a,b)=>a+b,0) / lens.length;
+    const sd = Math.sqrt(lens.reduce((a,b)=>a+(b-mean)**2,0) / lens.length);
+    const cv = mean ? sd / mean : 1;
+    if (cv < 0.30 && mean > 10) {
+      score += 20;
+      reasons.push("Sehr gleichförmige Satzlängen (Ø " + mean.toFixed(0) + " Wörter, kaum Variation) — menschliche Texte variieren stärker");
+    } else if (cv < 0.40 && mean > 10) {
+      score += 10;
+      reasons.push("Auffällig gleichmäßige Satzlängen");
+    }
+  }
+
+  // 5) Wiederholte Satzanfänge
+  if (sentences.length >= 4) {
+    const starts = sentences.map(s => s.split(/\s+/).slice(0,2).join(" ").toLowerCase());
+    const counts = {};
+    starts.forEach(s => counts[s] = (counts[s]||0)+1);
+    const maxRep = Math.max(...Object.values(counts));
+    if (maxRep >= 3) { score += 12; reasons.push("Mehrere Sätze beginnen identisch (" + maxRep + "×)"); }
+  }
+
+  // 6) Geringe lexikalische Diversität
+  if (words.length >= 80) {
+    const types = new Set(words.map(w => w.toLowerCase().replace(/[^a-zäöüß]/g,""))).size;
+    const ttr = types / words.length;
+    if (ttr < 0.42) { score += 12; reasons.push("Geringe Wortvielfalt (viele Wiederholungen)"); }
+  }
+
+  score = Math.min(Math.round(score), 100);
+  let sev = 0;
+  if (score >= 55) sev = 3; else if (score >= 32) sev = 2; else if (score >= 16) sev = 1;
+  return { score, sev, reasons, marks, sentences: sentences.length, words: words.length };
+}
+
+function renderMarked(p, marks) {
+  if (!marks.length) return esc(p);
+  marks.sort((a,b) => a[0]-b[0]);
+  const merged = [];
+  for (const m of marks) {
+    if (merged.length && m[0] <= merged[merged.length-1][1]) {
+      merged[merged.length-1][1] = Math.max(merged[merged.length-1][1], m[1]);
+    } else merged.push([...m]);
+  }
+  let out = "", pos = 0;
+  for (const [a,b] of merged) {
+    out += esc(p.slice(pos,a)) + "<mark>" + esc(p.slice(a,b)) + "</mark>";
+    pos = b;
+  }
+  return out + esc(p.slice(pos));
+}
+
+$("analyzeBtn").onclick = () => {
+  const raw = $("pasteArea").value.trim();
+  if (raw.split(/\s+/).length < 50) { status.textContent = "Bitte mindestens ~50 Wörter Text laden oder einfügen."; return; }
+  status.textContent = "";
+
+  // Absätze bilden (kurze Zeilen wie Überschriften ignorieren wir für die Bewertung)
+  const paras = raw.split(/\n\s*\n|\r\n\s*\r\n/).map(s => s.replace(/\s*\n\s*/g," ").trim()).filter(s => s.length > 0);
+
+  const results = paras.map(p => ({ text: p, ...analyzeParagraph(p) }));
+  const scored = results.filter(r => r.words >= 25);
+
+  // Gesamtscore: gewichteter Mittelwert + Aufschlag für Anteil auffälliger Absätze
+  const totalWords = scored.reduce((a,r)=>a+r.words,0) || 1;
+  const wAvg = scored.reduce((a,r)=>a + r.score * r.words, 0) / totalWords;
+  const flaggedShare = scored.length ? scored.filter(r=>r.sev>=2).length / scored.length : 0;
+  const overall = Math.min(Math.round(wAvg * 0.8 + flaggedShare * 40), 100);
+
+  // Gauge
+  let label, color;
+  if (overall >= 55) { label = "Stark auffällig"; color = "#dc2626"; }
+  else if (overall >= 32) { label = "Auffällig"; color = "#ea580c"; }
+  else if (overall >= 16) { label = "Leicht auffällig"; color = "#ca8a04"; }
+  else { label = "Unauffällig"; color = "#16a34a"; }
+  $("gaugeNum").textContent = overall;
+  $("gaugeNum").style.color = color;
+  $("gaugeLabel").textContent = label;
+  $("gaugeLabel").style.color = color;
+
+  // Metriken
+  const allSent = scored.reduce((a,r)=>a+r.sentences,0);
+  const phraseTotal = scored.reduce((a,r)=>a + r.marks.length, 0);
+  const flagged = scored.filter(r=>r.sev>0).length;
+  const mrow = (name, hint, val, max, col) =>
+    '<div class="metric"><div><span class="name">'+name+'</span><span class="hint">'+hint+'</span></div>' +
+    '<div style="display:flex;align-items:center;gap:10px"><span style="font-weight:700">'+val+'</span>' +
+    '<span class="bar"><i style="width:'+Math.min(100, max ? val/max*100 : 0)+'%;background:'+col+'"></i></span></div></div>';
+  $("metrics").innerHTML =
+    mrow("Analysierte Absätze", scored.length + " von " + paras.length + " (kurze Abschnitte übersprungen)", scored.length, paras.length, "#4f46e5") +
+    mrow("Auffällige Absätze", "Absätze mit mindestens einem Befund", flagged, scored.length, "#ea580c") +
+    mrow("Typische LLM-Phrasen", "Markierte Formulierungen im Text", phraseTotal, Math.max(phraseTotal, 20), "#dc2626") +
+    mrow("Sätze insgesamt", "Grundlage der Stilmetriken", allSent, allSent, "#94a3b8");
+
+  // Dokument rendern
+  const docBody = $("docBody");
+  docBody.innerHTML = "";
+  const findings = [];
+  results.forEach((r, i) => {
+    const div = document.createElement("div");
+    div.className = "para" + (r.words >= 25 && r.sev ? " s" + r.sev : "");
+    div.id = "p" + i;
+    div.innerHTML = renderMarked(r.text, r.marks);
+    if (r.reasons.length && r.words >= 25) div.title = "Score " + r.score + ": " + r.reasons.join(" · ");
+    docBody.appendChild(div);
+    if (r.sev > 0 && r.words >= 25) findings.push({ i, ...r });
+  });
+
+  // Befunde-Liste
+  findings.sort((a,b) => b.score - a.score);
+  $("findingsTitle").textContent = "Befunde (" + findings.length + ")";
+  $("findingsList").innerHTML = findings.length ? findings.map(f =>
+    '<div class="finding" onclick="document.getElementById(\'p'+f.i+'\').scrollIntoView({behavior:\'smooth\',block:\'center\'})">' +
+    '<span class="tag t'+f.sev+'">Score '+f.score+'</span>' +
+    '<span class="quote">„'+esc(f.text.slice(0,90))+'…“</span>' +
+    '<div class="why">'+f.reasons.map(esc).join("<br>")+'</div></div>'
+  ).join("") : '<div style="color:var(--muted);font-size:13px">Keine auffälligen Absätze gefunden.</div>';
+
+  $("results").style.display = "block";
+  $("results").scrollIntoView({ behavior: "smooth" });
+};
+</script>
+</body>
+</html>
